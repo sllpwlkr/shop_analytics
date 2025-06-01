@@ -271,11 +271,120 @@ services:
       - ../streaming/tabix-config.json:/var/www/html/tabix-config.json
     restart: unless-stopped
 
+  # Airflow для оркестрации
+  airflow-init:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    image: shop-analytics-airflow:latest
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://admin:password@postgres:5432/shop
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - PYTHONPATH=/opt/airflow:/opt/airflow/data_ingestion:/opt/airflow/utils:/opt/airflow/batch_processing
+      - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../dag:/opt/airflow/dags
+      - ../data_ingestion:/opt/airflow/data_ingestion
+      - ../utils:/opt/airflow/utils
+      - ../batch_processing:/opt/airflow/batch_processing
+      - airflow_logs:/opt/airflow/logs
+    command: >
+      bash -c "
+        # Initialize the database
+        airflow db init &&
+        
+        # Create admin user if it doesn't exist
+        airflow users list | grep -q admin || airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
+        
+        # Add connections only if they don't exist
+        (airflow connections get postgres_default > /dev/null 2>&1 || airflow connections add 'postgres_default' --conn-uri 'postgresql://admin:password@postgres:5432/shop') &&
+        (airflow connections get minio_default > /dev/null 2>&1 || airflow connections add 'minio_default' --conn-uri 'aws://minioadmin:minioadmin@minio:9000?endpoint_url=http://minio:9000&region_name=us-east-1') &&
+        (airflow connections get spark_default > /dev/null 2>&1 || airflow connections add 'spark_default' --conn-uri 'spark://spark-master:7077') &&
+        
+        # Set variables (these will update if they already exist)
+        airflow variables set 'MINIO_ENDPOINT' 'http://minio:9000' &&
+        airflow variables set 'MINIO_ACCESS_KEY' 'minioadmin' &&
+        airflow variables set 'MINIO_SECRET_KEY' 'minioadmin' &&
+        airflow variables set 'S3_BUCKET_RAW' 'shop-raw-data' &&
+        airflow variables set 'S3_BUCKET_STAGE' 'shop-stage-data' &&
+        airflow variables set 'S3_BUCKET_ANALYTICS' 'analytics'
+      "
+    restart: 'no'
+
+  airflow-webserver:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    image: shop-analytics-airflow:latest
+    ports:
+      - "8081:8080"
+    volumes:
+      - ../dag:/opt/airflow/dags
+      - ../data_ingestion:/opt/airflow/data_ingestion
+      - ../utils:/opt/airflow/utils
+      - ../batch_processing:/opt/airflow/batch_processing
+      - airflow_logs:/opt/airflow/logs
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://admin:password@postgres:5432/shop
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - PYTHONPATH=/opt/airflow:/opt/airflow/data_ingestion:/opt/airflow/utils:/opt/airflow/batch_processing
+      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+      - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - AIRFLOW__WEBSERVER__SECRET_KEY=temporary_key_for_cookie_signing
+      - AIRFLOW__WEBSERVER__COOKIE_SECURE=False
+      - AIRFLOW__WEBSERVER__BASE_URL=http://localhost:8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: on-failure:3
+
+  airflow-scheduler:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    image: shop-analytics-airflow:latest
+    volumes:
+      - ../dag:/opt/airflow/dags
+      - ../data_ingestion:/opt/airflow/data_ingestion
+      - ../utils:/opt/airflow/utils
+      - ../batch_processing:/opt/airflow/batch_processing
+      - airflow_logs:/opt/airflow/logs
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://admin:password@postgres:5432/shop
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - PYTHONPATH=/opt/airflow:/opt/airflow/data_ingestion:/opt/airflow/utils:/opt/airflow/batch_processing
+      - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-webserver:
+        condition: service_healthy
+    command: scheduler
+    restart: on-failure:3
+
 volumes:
   postgres_data:
   minio_data:
   clickhouse_data:
   spark_repository:
+  airflow_logs:
 
 networks:
   default:

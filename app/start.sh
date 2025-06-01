@@ -50,11 +50,14 @@ docker-compose -f infrastructure/docker-compose.yml exec -T api bash -c "export 
 show_status "Шаг 7/9: Загрузка данных в STAGE слой..."
 docker-compose -f infrastructure/docker-compose.yml exec -T api bash -c "export PYTHONPATH=/app && python /app/data_ingestion/s3_stage_loader.py"
 
-# Запуск ежедневного batch job участника 2
-show_status "Шаг 8/9: Запуск ежедневного Spark batch job..."
-echo "Обработка товаров, клиентов, покупок и создание аналитических агрегатов..."
-docker-compose -f infrastructure/docker-compose.yml exec -T spark-master bash -c "export PYTHONPATH=/app && bash /app/batch_processing/run_daily_job.sh" > /dev/null 2>&1
-echo "Ежедневная джоба успешно выполнена - данные добавлены в аналитический слой."
+# Информируем о настройке Airflow
+show_status "Шаг 8/9: Настройка оркестрации Airflow..."
+echo "Airflow настроен для ежедневного запуска ETL-процессов в 2:00 AM"
+echo "Доступ к Airflow: http://localhost:8081 (логин: admin / пароль: admin)"
+echo "DAG ежедневной задачи: daily_shop_etl"
+echo ""
+echo "Примечание: Инициализация Airflow может занять некоторое время (до 30-60 секунд)."
+echo "Если вы видите ошибку airflow-init, не беспокойтесь - это нормально, если контейнеры airflow-webserver и airflow-scheduler запустились успешно."
 
 show_status "Шаг 9/9: Все шаги выполнены успешно!"
 echo ""
@@ -74,6 +77,7 @@ echo ""
 echo "Access the services at:"
 echo "- API: http://localhost:8000"
 echo "- MinIO Console: http://localhost:9001 (login: minioadmin / password: minioadmin)"
+echo "- Airflow: http://localhost:8081 (login: admin / password: admin)"
 echo "- Spark Master UI: http://localhost:8080"
 echo "- ClickHouse HTTP: http://localhost:8123 (raw HTTP interface)"
 echo "- ClickHouse UI: http://localhost:8124 (Tabix interface - if login required, use login: default / no password)"

@@ -1,15 +1,21 @@
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 import os, sys
 
-# Добавляем в sys.path путь к data_ingestion и utils
+# Добавляем в sys.path путь к data_ingestion, utils и batch_processing
 PROJECT_HOME = os.getenv("PROJECT_HOME", "/opt/airflow")
 sys.path.insert(0, os.path.join(PROJECT_HOME, "data_ingestion"))
 sys.path.insert(0, os.path.join(PROJECT_HOME, "utils"))
+sys.path.insert(0, os.path.join(PROJECT_HOME, "batch_processing"))
 
 # Проверяем, что папки существуют
-for path in [os.path.join(PROJECT_HOME, "data_ingestion"), os.path.join(PROJECT_HOME, "utils")]:
+for path in [
+    os.path.join(PROJECT_HOME, "data_ingestion"), 
+    os.path.join(PROJECT_HOME, "utils"),
+    os.path.join(PROJECT_HOME, "batch_processing")
+]:
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
 
@@ -42,7 +48,7 @@ default_args = {
 with DAG(
     dag_id="daily_shop_etl",
     default_args=default_args,
-    description="Ежедневная загрузка товаров, клиентов и копирование Parquet",
+    description="Ежедневная загрузка товаров, клиентов и создание аналитики",
     start_date=datetime(2025, 6, 2, 2, 0),
     schedule_interval="0 2 * * *",
     catchup=False,
@@ -66,5 +72,29 @@ with DAG(
         task_id="copy_raw_to_stage_with_validation",
         python_callable=stage_loader_main,
     )
+    
+    # Задача для запуска Spark-джобы с интеграцией batch_processing
+    task_run_batch_processing = SparkSubmitOperator(
+        task_id='run_batch_processing',
+        application='/opt/airflow/batch_processing/daily_job.py',
+        conn_id='spark_default',
+        verbose=True,
+        packages=[
+            'org.apache.hadoop:hadoop-aws:3.3.4',
+            'org.apache.iceberg:iceberg-spark-runtime-3.4_2.12:1.4.3',
+            'com.clickhouse:clickhouse-jdbc:0.4.6'
+        ],
+        conf={
+            'spark.sql.catalog.iceberg': 'org.apache.iceberg.spark.SparkCatalog',
+            'spark.sql.catalog.iceberg.type': 'hadoop',
+            'spark.sql.catalog.iceberg.warehouse': 's3a://analytics/',
+            'spark.hadoop.fs.s3a.endpoint': 'http://minio:9000',
+            'spark.hadoop.fs.s3a.access.key': 'minioadmin',
+            'spark.hadoop.fs.s3a.secret.key': 'minioadmin',
+            'spark.hadoop.fs.s3a.path.style.access': 'true',
+            'spark.sql.extensions': 'org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions'
+        }
+    )
 
-    task_upload_products >> task_export_customers >> task_stage_loader
+    # Задаем последовательность выполнения задач
+    task_upload_products >> task_export_customers >> task_stage_loader >> task_run_batch_processing

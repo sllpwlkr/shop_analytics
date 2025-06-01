@@ -20,5 +20,6 @@ clickhouse-driver==0.2.6
 pandas==2.2.3
 pyarrow==19.0.1
 pyspark==3.5.0
+# Added for streaming component
 python-dotenv==1.0.0
 clickhouse-driver==0.2.6
