@@ -25,4 +25,5 @@ def process_customers(spark: SparkSession):
     """)
 
     # 4. Записываем данные
-    df_clean.write.format("iceberg").mode("overwrite").save("analytics.customers")
+    df_clean.writeTo("analytics.customers").overwritePartitions()
+
