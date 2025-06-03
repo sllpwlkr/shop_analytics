@@ -17,7 +17,7 @@ def run_aggregations(spark):
 
     category_sales.write \
         .format("jdbc") \
-        .option("url", "jdbc:clickhouse://clickhouse:8123/analytics") \
+        .option("url", "jdbc:clickhouse://clickhouse:8123/default") \
         .option("driver", "com.clickhouse.jdbc.ClickHouseDriver") \
         .option("dbtable", "category_sales") \
         .option("user", "default") \
@@ -37,7 +37,7 @@ def run_aggregations(spark):
 
     rfm.write \
         .format("jdbc") \
-        .option("url", "jdbc:clickhouse://clickhouse:8123/analytics") \
+        .option("url", "jdbc:clickhouse://clickhouse:8123/default") \
         .option("driver", "com.clickhouse.jdbc.ClickHouseDriver") \
         .option("dbtable", "customer_rfm") \
         .option("user", "default") \
@@ -55,7 +55,7 @@ def run_aggregations(spark):
 
     top_products.write \
         .format("jdbc") \
-        .option("url", "jdbc:clickhouse://clickhouse:8123/analytics") \
+        .option("url", "jdbc:clickhouse://clickhouse:8123/default") \
         .option("driver", "com.clickhouse.jdbc.ClickHouseDriver") \
         .option("dbtable", "top_products") \
         .option("user", "default") \
